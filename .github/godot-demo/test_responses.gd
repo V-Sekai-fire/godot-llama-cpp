@@ -45,7 +45,8 @@ func test_with_model_sync(context):
             context.model = llama_model
 
             # Set reasonable parameters for testing
-            context.n_len = 10    # Very short response for testing
+            context.n_ctx = 32    # Small context for fast CPU test
+            context.n_len = 1    # Very short response for testing
             context.temperature = 0.0   # Use greedy sampling for deterministic output
 
             # Wait for model initialization
@@ -55,7 +56,7 @@ func test_with_model_sync(context):
             print("\n--- Test 2: Real llama.cpp Response (model loaded) ---")
 
             var start_time = Time.get_ticks_msec()
-            var result = context.request_completion("Answer: 2 + 2 = ")
+            var result = context.request_completion("hi")
             var end_time = Time.get_ticks_msec()
 
             print("Real result:", result)

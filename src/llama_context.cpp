@@ -137,18 +137,36 @@ PackedStringArray LlamaContext::_get_configuration_warnings() const {
 }
 
 String LlamaContext::request_completion(const String &prompt) {
-	UtilityFunctions::print(vformat("%s: Processing prompt synchronously", __func__));
+  printf("DEBUG: request_completion called\n");
+	UtilityFunctions::print("LlamaContext::request_completion: Processing prompt synchronously");
 
 	// Return mock response if model/context not initialized (for testing without model)
-	if (model.is_null() || !ctx) {
-		UtilityFunctions::print(vformat("%s: Using mock response (model/context not initialized)", __func__));
+	UtilityFunctions::print("LlamaContext::request_completion: Checking if model/context initialized");
+	if (model.is_null()) {
+		UtilityFunctions::print(vformat("%s: Model is null", __func__));
 		return "Mock response: Model not loaded, but synchronous completion works!";
 	}
+	UtilityFunctions::print(vformat("%s: Model is valid", __func__));
+	if (model->model == nullptr) {
+		UtilityFunctions::print(vformat("%s: Llama model pointer is null", __func__));
+		return "Mock response: Llama model pointer not loaded, but synchronous completion works!";
+	}
+	UtilityFunctions::print(vformat("%s: Llama model pointer is valid", __func__));
+	if (!ctx) {
+		UtilityFunctions::print(vformat("%s: Context is null", __func__));
+		return "Mock response: Context not initialized, but synchronous completion works!";
+	}
+	UtilityFunctions::print(vformat("%s: Context is valid", __func__));
+
+	UtilityFunctions::print(vformat("%s: Starting tokenization", __func__));
 
 	// Tokenize input prompt
+	UtilityFunctions::print(vformat("%s: Getting vocab from model", __func__));
 	const llama_vocab * vocab = llama_model_get_vocab(model->model);
+	UtilityFunctions::print(vformat("%s: Converting prompt to UTF-8", __func__));
 	const char* prompt_c_str = prompt.utf8().get_data();
 	uint32_t prompt_length = prompt.utf8().length();
+	UtilityFunctions::print(vformat("%s: Prompt length: %d", __func__, prompt_length));
 
 	int32_t n_tokens_max = prompt_length + 4; // Add padding for special tokens
 	std::vector<llama_token> tokens(n_tokens_max);
@@ -183,7 +201,8 @@ String LlamaContext::request_completion(const String &prompt) {
 	int32_t curr_token_pos = context_tokens.size();
 
 	for (int i = 0; i < n_len && (int)context_tokens.size() < (int)ctx_params.n_ctx; ++i) {
-		llama_token new_token = llama_sampler_sample(sampling_ctx, ctx, context_tokens.size() - 1);
+		// Sample from the last batch logit (always 0 for single token batches)
+		llama_token new_token = llama_sampler_sample(sampling_ctx, ctx, 0);
 
 		if (llama_vocab_is_eog(vocab, new_token)) {
 			break; // End of generation
