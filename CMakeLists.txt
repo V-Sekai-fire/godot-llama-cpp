@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.14)
 project(godot-llama-cpp CXX)
 
+# Build static libraries to reduce the number of separate .dylib files
+set(BUILD_SHARED_LIBS OFF)
+
 # Options for compute backends
 option(ENABLE_METAL "Enable Metal compute backend" OFF)
 option(ENABLE_VULKAN "Enable Vulkan compute backend" OFF)
