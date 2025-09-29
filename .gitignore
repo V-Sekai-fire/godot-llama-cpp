@@ -54,3 +54,9 @@ zig-out
 *.gguf
 
 godot/addons/godot-llama-cpp/lib/*
+build/
+.cache/
+godot-bin/
+.github/godot-demo/addons/godot-llama-cpp/lib/libgodot_llama.dylib
+.github/godot-demo/addons/godot-llama-cpp/bin/
+.github/godot-demo/addons/godot-llama-cpp/lib/

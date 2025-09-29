@@ -5,7 +5,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/engine.hpp>
 
-using namespace godot;
+namespace godot {
 
 void LlamaModel::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("load_model"), &LlamaModel::load_model);
@@ -30,7 +30,7 @@ void LlamaModel::load_model() {
 
 	String absPath = ProjectSettings::get_singleton()->globalize_path(get_path());
 
-	model = llama_load_model_from_file(absPath.utf8().get_data(), model_params);
+	model = llama_model_load_from_file(absPath.utf8().get_data(), model_params);
 
 	if (model == NULL) {
 		UtilityFunctions::printerr(vformat("%s: Unable to load model from %s", __func__, absPath));
@@ -50,6 +50,8 @@ void LlamaModel::set_n_gpu_layers(int32_t n) {
 
 LlamaModel::~LlamaModel() {
 	if (model) {
-		llama_free_model(model);
+		llama_model_free(model);
 	}
 }
+
+} // namespace godot

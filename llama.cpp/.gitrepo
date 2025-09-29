@@ -1,0 +1,12 @@
+; DO NOT EDIT (unless you know what you are doing)
+;
+; This subdirectory is a git "subrepo", and this file is maintained by the
+; git-subrepo command. See https://github.com/ingydotnet/git-subrepo#readme
+;
+[subrepo]
+	remote = https://github.com/ggml-org/llama.cpp
+	branch = bd0af02fc96c2057726f33c0f0daf7bb8f3e462a
+	commit = bd0af02fc96c2057726f33c0f0daf7bb8f3e462a
+	parent = caf5e79482237c58bf096104d74a94d8e984b6a6
+	method = merge
+	cmdver = 0.4.9

@@ -2,19 +2,10 @@
 #define LLAMA_CONTEXT_H
 
 #include "llama.h"
-#include "common.h"
 #include "llama_model.h"
-#include <godot_cpp/classes/mutex.hpp>
 #include <godot_cpp/classes/node.hpp>
-#include <godot_cpp/classes/semaphore.hpp>
-#include <godot_cpp/classes/thread.hpp>
-#include <godot_cpp/templates/vector.hpp>
-namespace godot {
 
-struct completion_request {
-	int id;
-	String prompt;
-};
+namespace godot {
 
 class LlamaContext : public Node {
 	GDCLASS(LlamaContext, Node)
@@ -22,18 +13,20 @@ class LlamaContext : public Node {
 private:
 	Ref<LlamaModel> model;
 	llama_context *ctx = nullptr;
-  llama_sampling_context *sampling_ctx = nullptr;
+  llama_sampler * sampling_ctx = nullptr;
 	llama_context_params ctx_params;
-  llama_sampling_params sampling_params;
+  struct {
+    int32_t n_prev = 64;      // number of previous tokens to remember
+    int32_t n_predict = 1024; // new tokens to predict
+    float temperature = 0.8f;
+    float top_p = 0.95f;
+    float presence_penalty = 0.0f;
+    float frequency_penalty = 0.0f;
+  } sampling_params;
   int32_t n_len = 1024;
-	int request_id = 0;
-	Vector<completion_request> completion_requests;
+	uint32_t seed = -1;
 
-	Ref<Thread> thread;
-	Ref<Semaphore> semaphore;
-	Ref<Mutex> mutex;
-  std::vector<llama_token> context_tokens;
-  bool exit_thread = false;
+	std::vector<llama_token> context_tokens;
 
 protected:
 	static void _bind_methods();
@@ -42,8 +35,7 @@ public:
 	void set_model(const Ref<LlamaModel> model);
 	Ref<LlamaModel> get_model();
 
-	int request_completion(const String &prompt);
-	void __thread_loop();
+	String request_completion(const String &prompt);
 
 	uint32_t get_seed();
 	void set_seed(uint32_t seed);
@@ -63,8 +55,12 @@ public:
 	virtual PackedStringArray _get_configuration_warnings() const override;
 	virtual void _enter_tree() override;
   virtual void _exit_tree() override;
+	virtual void _notification(int p_notification);
+
+	void try_initialize_context();
 	LlamaContext();
 };
-} //namespace godot
+
+} // namespace godot
 
 #endif

@@ -8,7 +8,7 @@
 #include "llama_model_loader.h"
 #include "llama_context.h"
 
-using namespace godot;
+namespace godot {
 
 static Ref<LlamaModelLoader> llamaModelLoader;
 
@@ -22,7 +22,7 @@ void initialize_types(ModuleInitializationLevel p_level)
 	ResourceLoader::get_singleton()->add_resource_format_loader(llamaModelLoader);
 
 	ClassDB::register_class<LlamaModel>();
-  ClassDB::register_class<LlamaContext>();
+	ClassDB::register_class<LlamaContext>();
 }
 
 void uninitialize_types(ModuleInitializationLevel p_level) {
@@ -46,3 +46,5 @@ extern "C"
 		return init_obj.init();
 	}
 }
+
+} // namespace godot
