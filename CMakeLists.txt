@@ -52,8 +52,11 @@ target_include_directories(godot_llama PRIVATE
 target_link_libraries(godot_llama PRIVATE godot::cpp llama)
 
 # Platform-specific linking
-if(APPLE AND ENABLE_METAL)
-    target_link_libraries(godot_llama PRIVATE "-framework Foundation" "-framework Metal" "-framework MetalKit")
+if(APPLE)
+    target_link_libraries(godot_llama PRIVATE "-framework Accelerate")
+    if(ENABLE_METAL)
+        target_link_libraries(godot_llama PRIVATE "-framework Foundation" "-framework Metal" "-framework MetalKit")
+    endif()
 endif()
 
 # Godot extension naming convention: godot-llama-cpp-triple-optimize

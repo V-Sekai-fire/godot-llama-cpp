@@ -1,0 +1,19 @@
+[configuration]
+
+entry_symbol = "init_library"
+compatibility_minimum = "4.2"
+reloadable = true
+
+[libraries]
+
+macos.debug = "res://addons/godot-llama-cpp/lib/libgodot_llama.dylib"
+macos.release = "res://addons/godot-llama-cpp/lib/libgodot_llama.dylib"
+windows.debug.x86_64 = "res://addons/godot-llama-cpp/lib/godot_llama.dll"
+windows.release.x86_64 = "res://addons/godot-llama-cpp/lib/godot_llama.dll"
+linux.debug.x86_64 = "res://addons/godot-llama-cpp/lib/libgodot_llama.so"
+linux.release.x86_64 = "res://addons/godot-llama-cpp/lib/libgodot_llama.so"
+
+[icons]
+
+LlamaModel = "res://addons/godot-llama-cpp/assets/godot-llama-cpp-16x16.svg"
+LlamaContext = "res://addons/godot-llama-cpp/assets/godot-llama-cpp-16x16.svg"

@@ -22,7 +22,7 @@ void initialize_types(ModuleInitializationLevel p_level)
 	ResourceLoader::get_singleton()->add_resource_format_loader(llamaModelLoader);
 
 	ClassDB::register_class<LlamaModel>();
-  ClassDB::register_class<LlamaContext>();
+	ClassDB::register_class<LlamaContext>();
 }
 
 void uninitialize_types(ModuleInitializationLevel p_level) {

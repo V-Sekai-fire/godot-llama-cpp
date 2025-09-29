@@ -11,8 +11,8 @@ config_version=5
 [application]
 
 config/name="godot-llama-cpp"
-run/main_scene="res://examples/simple/simple.tscn"
-config/features=PackedStringArray("4.2", "Forward Plus")
+run/main_scene="res://test_scene.tscn"
+config/features=PackedStringArray("4.5", "Forward Plus")
 config/icon="res://icon.svg"
 
 [editor_plugins]

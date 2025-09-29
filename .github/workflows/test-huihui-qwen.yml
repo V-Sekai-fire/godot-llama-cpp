@@ -1,0 +1,179 @@
+name: Test Huihui-Qwen3 Model
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake pkg-config libx11-dev libxcursor-dev libxinerama-dev libgl1-mesa-dev libglu-dev libasound2-dev libpulse-dev libudev-dev libxi-dev libxrandr-dev
+        
+    - name: Cache Godot binaries
+      id: cache-godot
+      uses: actions/cache@v3
+      with:
+        path: |
+          godot-bin
+        key: godot-4.5-${{ runner.os }}
+        
+    - name: Download Godot
+      if: steps.cache-godot.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p godot-bin
+        cd godot-bin
+        wget https://github.com/godotengine/godot/releases/download/4.5-stable/Godot_v4.5-stable_linux.x86_64.zip
+        unzip Godot_v4.5-stable_linux.x86_64.zip
+        chmod +x Godot_v4.5-stable_linux.x86_64
+        ln -sf Godot_v4.5-stable_linux.x86_64 godot
+        
+    - name: Cache Huihui-Qwen3 model
+      id: cache-model
+      uses: actions/cache@v3
+      with:
+        path: |
+          .github/godot-demo/models/huihui-qwen3-0.6b-abliterated-v2-q8_0.gguf
+        key: huihui-qwen3-q8_0-${{ hashFiles('.github/scripts/download_model.sh') }}
+        
+    - name: Download Huihui-Qwen3 model
+      if: steps.cache-model.outputs.cache-hit != 'true'
+      run: |
+        chmod +x .github/scripts/download_model.sh
+        ./.github/scripts/download_model.sh
+        
+    - name: Build godot-llama-cpp extension
+      run: |
+        mkdir -p build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        make -j$(nproc)
+        
+    - name: Copy extension to Godot project
+      run: |
+        mkdir -p .github/godot-demo/addons/godot-llama-cpp/bin
+        find build -name "*.so" -exec cp {} .github/godot-demo/addons/godot-llama-cpp/bin/ \;
+        
+    - name: Verify model file
+      run: |
+        ls -la .github/godot-demo/models/
+        file .github/godot-demo/models/huihui-qwen3-0.6b-abliterated-v2-q8_0.gguf || echo "Model file not found"
+        
+    - name: Run Godot test (headless)
+      id: run-test
+      run: |
+        cd .github/godot-demo
+        export DISPLAY=:99
+        Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+        sleep 2
+        timeout 120 ../../godot-bin/godot --headless --script test_huihui_qwen.gd > test_output.log 2>&1
+        echo "Test completed"
+        
+    - name: Extract test results
+      run: |
+        cd .github/godot-demo
+        echo "=== Full Test Output ==="
+        cat test_output.log
+        echo ""
+        echo "=== Extracting JSON Results ==="
+        
+        # Extract JSON between markers
+        if grep -q "=== TEST RESULTS (JSON) ===" test_output.log; then
+          sed -n '/=== TEST RESULTS (JSON) ===/,/=== END TEST RESULTS ===/p' test_output.log | grep -v "=== " > results.json
+          echo "Test results found:"
+          cat results.json
+          
+          # Parse and validate JSON
+          if python3 -m json.tool results.json > /dev/null 2>&1; then
+            echo "✅ Valid JSON output generated"
+            
+            # Extract key metrics
+            STATUS=$(python3 -c "import json; data=json.load(open('results.json')); print(data.get('status', 'unknown'))")
+            echo "Test Status: $STATUS"
+            
+            if [ "$STATUS" = "completed" ]; then
+              RESPONSE=$(python3 -c "import json; data=json.load(open('results.json')); print(data.get('response', 'No response')[:100])")
+              DURATION=$(python3 -c "import json; data=json.load(open('results.json')); print(data.get('duration_ms', 0))")
+              echo "Response (first 100 chars): $RESPONSE"
+              echo "Duration: ${DURATION}ms"
+              echo "✅ Model test PASSED"
+            else
+              ERROR=$(python3 -c "import json; data=json.load(open('results.json')); print(data.get('error', 'Unknown error'))")
+              echo "❌ Model test FAILED: $ERROR"
+              exit 1
+            fi
+          else
+            echo "❌ Invalid JSON output"
+            exit 1
+          fi
+        else
+          echo "❌ No JSON results found in output"
+          exit 1
+        fi
+        
+    - name: Upload test artifacts
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: test-results
+        path: |
+          .github/godot-demo/test_output.log
+          .github/godot-demo/results.json
+          
+    - name: Comment PR with results
+      uses: actions/github-script@v6
+      if: github.event_name == 'pull_request' && always()
+      with:
+        script: |
+          const fs = require('fs');
+          try {
+            const results = JSON.parse(fs.readFileSync('.github/godot-demo/results.json', 'utf8'));
+            const status = results.status === 'completed' ? '✅ PASSED' : '❌ FAILED';
+            const response = results.response ? results.response.substring(0, 200) + '...' : 'No response';
+            const duration = results.duration_ms || 'N/A';
+            
+            const body = `## 🤖 Huihui-Qwen3 Model Test ${status}
+            
+**Model:** huihui-qwen3-0.6b-abliterated-v2-q8_0.gguf
+**Test Prompt:** ${results.test_prompt || 'N/A'}
+**Status:** ${results.status}
+**Duration:** ${duration}ms
+**Response Preview:** ${response}
+
+${results.error ? `**Error:** ${results.error}` : ''}
+
+<details>
+<summary>View full JSON results</summary>
+
+\`\`\`json
+${JSON.stringify(results, null, 2)}
+\`\`\`
+</details>`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+          } catch (error) {
+            console.log('Could not parse results:', error);
+          }

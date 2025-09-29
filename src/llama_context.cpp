@@ -55,6 +55,8 @@ LlamaContext::LlamaContext() {
 	int32_t n_threads = OS::get_singleton()->get_processor_count();
 	ctx_params.n_threads = n_threads;
 	ctx_params.n_threads_batch = n_threads;
+
+	sampling_params.temperature = 0.0f;
 }
 
 void LlamaContext::_enter_tree() {
@@ -81,7 +83,13 @@ void LlamaContext::_enter_tree() {
 		return;
 	}
 
-	sampling_ctx = llama_sampler_init_greedy();
+	if (sampling_params.temperature == 0.0f) {
+		sampling_ctx = llama_sampler_init_greedy();
+	} else {
+		sampling_ctx = llama_sampler_init_temp(sampling_params.temperature);
+		llama_sampler_chain_add(sampling_ctx, llama_sampler_init_top_p(sampling_params.top_p, 1));
+		llama_sampler_chain_add(sampling_ctx, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
+	}
 
 	UtilityFunctions::print(vformat("%s: Context initialized", __func__));
 
@@ -158,7 +166,7 @@ void LlamaContext::__thread_loop() {
 			Dictionary response;
 			response["id"] = req.id;
 			response["error"] = "llama_decode() failed";
-			call_thread_safe("emit_signal", "completion_generated", response);
+			call_deferred("emit_signal", "completion_generated", response);
 			continue;
 		}
 
@@ -170,7 +178,7 @@ void LlamaContext::__thread_loop() {
 			Dictionary response;
 			response["id"] = req.id;
 			response["error"] = "llama_decode() failed";
-			call_thread_safe("emit_signal", "completion_generated", response);
+			call_deferred("emit_signal", "completion_generated", response);
 			continue;
 		}
 
@@ -189,19 +197,21 @@ void LlamaContext::__thread_loop() {
 			context_tokens.push_back(new_token_id);
 
 			bool eog = llama_vocab_is_eog(vocab, new_token_id);
-			bool curr_eq_n_len = curr_token_pos == n_len;
+			bool curr_eq_n_len = curr_token_pos >= n_len;
 
 			if (eog || curr_eq_n_len) {
 				response["done"] = true;
-				call_thread_safe("emit_signal", "completion_generated", response);
+				call_deferred("emit_signal", "completion_generated", response);
 				break;
 			}
 
 			len = ::llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, false);
-			buf[len] = '\0';
-			response["text"] = String(buf);
+			if (len > 0) {
+				buf[len] = '\0';
+				response["text"] = String(buf);
+			}
 			response["done"] = false;
-			call_thread_safe("emit_signal", "completion_generated", response);
+			call_deferred("emit_signal", "completion_generated", response);
 
 			batch = llama_batch_get_one(&new_token_id, 1);
 
@@ -217,7 +227,7 @@ void LlamaContext::__thread_loop() {
 			Dictionary response;
 			response["id"] = req.id;
 			response["error"] = "llama_decode() failed";
-			call_thread_safe("emit_signal", "completion_generated", response);
+			call_deferred("emit_signal", "completion_generated", response);
 			continue;
 		}
 	}
@@ -232,7 +242,8 @@ PackedStringArray LlamaContext::_get_configuration_warnings() const {
 }
 
 int LlamaContext::request_completion(const String &prompt) {
-	int id = request_id++;
+	request_id++;
+	int id = request_id;
 
 	UtilityFunctions::print(vformat("%s: Requesting completion for prompt id: %d", __func__, id));
 
