@@ -2,7 +2,6 @@
 #define LLAMA_CONTEXT_H
 
 #include "llama.h"
-#include "common.h"
 #include "llama_model.h"
 #include <godot_cpp/classes/mutex.hpp>
 #include <godot_cpp/classes/node.hpp>
@@ -16,16 +15,24 @@ struct completion_request {
 	String prompt;
 };
 
-class LlamaContext : public Node {
+class LlamaContext : public godot::Node {
 	GDCLASS(LlamaContext, Node)
 
 private:
 	Ref<LlamaModel> model;
 	llama_context *ctx = nullptr;
-  llama_sampling_context *sampling_ctx = nullptr;
+  llama_sampler * sampling_ctx = nullptr;
 	llama_context_params ctx_params;
-  llama_sampling_params sampling_params;
+  struct {
+    int32_t n_prev = 64;      // number of previous tokens to remember
+    int32_t n_predict = 1024; // new tokens to predict
+    float temperature = 0.8f;
+    float top_p = 0.95f;
+    float presence_penalty = 0.0f;
+    float frequency_penalty = 0.0f;
+  } sampling_params;
   int32_t n_len = 1024;
+	uint32_t seed = -1;
 	int request_id = 0;
 	Vector<completion_request> completion_requests;
 

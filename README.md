@@ -10,7 +10,7 @@ Run large language models in [Godot](https://godotengine.org). Powered by [llama
 <br />
 
 ![Godot v4.2](https://img.shields.io/badge/Godot-v4.2-%23478cbf?logo=godot-engine&logoColor=white)
-![GitHub last commit](https://img.shields.io/github/last-commit/hazelnutcloud/godot-llama-cpp)
+![CMake CI](https://github.com/hazelnutcloud/godot-llama-cpp/actions/workflows/builds.yml/badge.svg)
 ![GitHub License](https://img.shields.io/github/license/hazelnutcloud/godot-llama-cpp)
 
 </div>
@@ -56,24 +56,39 @@ while (true):
 
 ## Building & Installation
 
-1. Download zig v0.13.0 from https://ziglang.org/download/
-2. Clone the repository:
+### Prerequisites
+- CMake 3.14 or later
+- C++ compiler supporting C++17
+- Python 3.4+ (for bindings generation)
+
+### Steps
+
+1. Clone the repository:
    ```bash
    git clone --recurse-submodules https://github.com/hazelnutcloud/godot-llama-cpp.git
    ```
-3. Copy the `godot-llama-cpp` addon folder in `godot/addons` to your Godot project's `addons` folder.
+2. Copy the `godot-llama-cpp` addon folder in `godot/addons` to your Godot project's `addons` folder.
    ```bash
     cp -r godot-llama-cpp/godot/addons/godot-llama-cpp <your_project>/addons
    ```
-4. Build the extension and install it in your Godot project:
+3. Build the extension and install it in your Godot project addons folder:
    ```bash
    cd godot-llama-cpp
-   zig build --prefix <your_project>/addons/godot-llama-cpp
+   mkdir build && cd build
+   cmake .. -DENABLE_METAL=ON  # or other options like ENABLE_CUDA=ON
+   make
+   make install
    ```
-5. Enable the plugin in your Godot project settings.
-6. Add the `LlamaContext` node to your scene.
-7. Run your Godot project.
-8. Enjoy!
+4. Enable the plugin in your Godot project settings.
+5. Add the `LlamaContext` node to your scene.
+6. Run your Godot project.
+7. Enjoy!
+
+### Build Options
+- `ENABLE_METAL=ON`: Enable Metal compute backend (macOS)
+- `ENABLE_VULKAN=ON`: Enable Vulkan compute backend
+- `ENABLE_CUDA=ON`: Enable CUDA compute backend
+- `ENABLE_CANN=ON`: Enable CANN compute backend
 
 ## License
 

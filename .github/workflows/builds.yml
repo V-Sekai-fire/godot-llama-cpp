@@ -1,9 +1,9 @@
-name: Builds
+name: CMake Builds
 
-on: push
+on: [push, pull_request]
 
 env:
-  LIBNAME: example
+  LIBNAME: godot_llama
 
 concurrency:
   group: ci-${{github.actor}}-${{github.head_ref || github.run_number}}-${{github.ref}}-macos
@@ -11,45 +11,25 @@ concurrency:
 
 jobs:
   build:
-    runs-on:  ${{matrix.os}}
-    # temporarily disable
-    if: false 
-    name: ${{matrix.name}}
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - identifier: windows-debug
-            os: windows-latest
-            name: 🏁 Windows Debug
-            target: template_debug
-            platform: windows
-            arch: x86_64
           - identifier: windows-release
             os: windows-latest
             name: 🏁 Windows Release
             target: template_release
             platform: windows
             arch: x86_64
-          - identifier: macos-debug
-            os: macos-latest
-            name: 🍎 macOS (universal) Debug
-            target: template_debug
-            platform: macos
-            arch: universal
           - identifier: macos-release
             os: macos-latest
-            name: 🍎 macOS (universal) Release
+            name: 🍎 macOS Release
             target: template_release
             platform: macos
-            arch: universal
-          - identifier: linux-debug
-            os: ubuntu-latest
-            name: 🐧 Linux Debug
-            runner: ubuntu-20.04
-            target: template_debug
-            platform: linux
-            arch: x86_64
+            arch: arm64
+            enable_metal: ON
           - identifier: linux-release
             os: ubuntu-latest
             name: 🐧 Linux Release
@@ -58,68 +38,65 @@ jobs:
             platform: linux
             arch: x86_64
 
+    env:
+      GODOTCPP_TARGET: ${{ matrix.target }}
+      GODOTCPP_PLATFORM: ${{ matrix.platform }}
+      GODOTCPP_ARCH: ${{ matrix.arch }}
+      ENABLE_METAL: ${{ matrix.enable_metal || 'OFF' }}
+
     steps:
       - name: Checkout project
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
-
-      - name: Set up SCons
+      - name: Install Ninja
         shell: bash
         run: |
-          python -c "import sys; print(sys.version)"
-          python -m pip install scons
-          scons --version
-      - name: Linux dependencies
-        if: ${{ matrix.platform == 'linux' }}
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -qqq build-essential pkg-config
-      - name: Setup MinGW for Windows/MinGW build
-        if: ${{ matrix.platform == 'windows' }}
-        uses: egor-tensin/setup-mingw@v2
-        with:
-          version: 12.2.0
+          if [ "$RUNNER_OS" == "macOS" ]; then
+            brew install ninja
+          elif [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -qqq ninja-build build-essential pkg-config
+          elif [ "$RUNNER_OS" == "Windows" ]; then
+            pip install ninja
+          fi
 
-      - name: Compile godot-cpp
-        shell: sh
-        run: |
-          scons target='${{ matrix.target }}' platform='${{ matrix.platform }}' arch='${{ matrix.arch }}'
-        working-directory: godot-cpp
+      - name: Configure CMake
+        shell: bash
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DENABLE_METAL=${{ env.ENABLE_METAL }}
 
-      - name: Compile Extension
-        shell: sh
+      - name: Build project
+        shell: bash
         run: |
-          scons target='${{ matrix.target }}' platform='${{ matrix.platform }}' arch='${{ matrix.arch }}'
-      - name: Delete compilation files
-        if: ${{ matrix.platform == 'windows' }}
+          cmake --build build --config Release --parallel
+
+      - name: Install project
+        shell: bash
         run: |
-          Remove-Item bin/* -Include *.exp,*.lib,*.pdb -Force
+          cmake --install build --prefix=./install
+
       - name: Upload artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.repository.name }}
+          name: ${{ github.event.repository.name }}-${{ matrix.identifier }}
           path: |
-            ${{ github.workspace }}/bin/*
+            ./install/**
+
       - name: Archive Release
-        uses: thedoctor0/zip-release@0.7.1
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+        uses: thedoctor0/zip-release@main
         with:
           type: 'zip'
-          filename: '${{ env.LIBNAME }}.${{ matrix.platform }}.${{ matrix.arch }}.zip'
-          path: '${{ github.workspace }}/bin/'
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+          filename: '${{ env.LIBNAME }}-cmake.${{ matrix.platform }}.${{ matrix.arch }}.zip'
+          path: './install/'
 
       - name: Create and upload asset
         if: success() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
         uses: ncipollo/release-action@v1
         with:
           allowUpdates: true
-          artifacts: "${{ env.LIBNAME }}.${{ matrix.platform }}.${{ matrix.arch }}.zip"
+          artifacts: "${{ env.LIBNAME }}-cmake.${{ matrix.platform }}.${{ matrix.arch }}.zip"
           omitNameDuringUpdate: true
           omitBodyDuringUpdate: true
           token: ${{ secrets.GITHUB_TOKEN }}

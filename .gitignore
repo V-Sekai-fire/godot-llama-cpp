@@ -54,3 +54,5 @@ zig-out
 *.gguf
 
 godot/addons/godot-llama-cpp/lib/*
+build/
+.cache/
