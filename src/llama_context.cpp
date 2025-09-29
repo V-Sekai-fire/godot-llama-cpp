@@ -7,7 +7,7 @@
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
 
-using namespace godot;
+namespace godot {
 
 void LlamaContext::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_model", "model"), &LlamaContext::set_model);
@@ -43,7 +43,6 @@ void LlamaContext::_bind_methods() {
 	ClassDB::add_property("LlamaContext", PropertyInfo(Variant::INT, "n_len"), "set_n_len", "get_n_len");
 
 	ClassDB::bind_method(D_METHOD("request_completion", "prompt"), &LlamaContext::request_completion);
-	ClassDB::bind_method(D_METHOD("__thread_loop"), &LlamaContext::__thread_loop);
 
 	ADD_SIGNAL(MethodInfo("completion_generated", PropertyInfo(Variant::DICTIONARY, "chunk")));
 }
@@ -70,10 +69,6 @@ void LlamaContext::_enter_tree() {
 		return;
 	}
 
-	mutex.instantiate();
-	semaphore.instantiate();
-	thread.instantiate();
-
 	llama_backend_init();
 	llama_numa_init(ggml_numa_strategy::GGML_NUMA_STRATEGY_DISABLED);
 
@@ -82,6 +77,11 @@ void LlamaContext::_enter_tree() {
 		UtilityFunctions::printerr(vformat("%s: Failed to initialize llama context, null ctx", __func__));
 		return;
 	}
+
+	// Set abort callback to avoid Godot threading issues
+	llama_set_abort_callback(ctx, [](void* /*data*/) -> bool {
+		return false; // Continue, don't abort
+	}, nullptr);
 
 	if (sampling_params.temperature == 0.0f) {
 		sampling_ctx = llama_sampler_init_greedy();
@@ -92,145 +92,6 @@ void LlamaContext::_enter_tree() {
 	}
 
 	UtilityFunctions::print(vformat("%s: Context initialized", __func__));
-
-	thread->start(callable_mp(this, &LlamaContext::__thread_loop));
-}
-
-void LlamaContext::__thread_loop() {
-	while (true) {
-		semaphore->wait();
-
-		mutex->lock();
-		if (exit_thread) {
-			mutex->unlock();
-			break;
-		}
-		if (completion_requests.size() == 0) {
-			mutex->unlock();
-			continue;
-		}
-		completion_request req = completion_requests.get(0);
-		completion_requests.remove_at(0);
-		mutex->unlock();
-
-		UtilityFunctions::print(vformat("%s: Running completion for prompt id: %d", __func__, req.id));
-
-		const llama_vocab * vocab = llama_model_get_vocab(model->model);
-
-		std::vector<llama_token> request_tokens;
-
-		int32_t n_tokens_max = req.prompt.utf8().length() + 4;
-
-		std::vector<llama_token> tokens(n_tokens_max);
-
-		int32_t n_tokens = ::llama_tokenize(vocab, req.prompt.utf8().get_data(), req.prompt.utf8().length(), tokens.data(), n_tokens_max, true, false);
-
-		request_tokens.resize(n_tokens);
-
-		std::copy(tokens.begin(), tokens.begin() + n_tokens, request_tokens.begin());
-
-		size_t shared_prefix_idx = 0;
-		auto diff = std::mismatch(context_tokens.begin(), context_tokens.end(), request_tokens.begin(), request_tokens.end());
-		if (diff.first != context_tokens.end()) {
-			shared_prefix_idx = std::distance(context_tokens.begin(), diff.first);
-		} else {
-			shared_prefix_idx = std::min(context_tokens.size(), request_tokens.size());
-		}
-
-		// TODO: llama_kv_cache_seq_rm not found in v3, skip for now
-		// bool rm_success = llama_kv_cache_seq_rm(ctx, -1, shared_prefix_idx, -1);
-		// if (!rm_success) ...
-		// Instead, erase manually
-		context_tokens.erase(context_tokens.begin(), context_tokens.begin() + shared_prefix_idx);
-		request_tokens.erase(request_tokens.begin(), request_tokens.begin() + shared_prefix_idx);
-
-		llama_batch batch = llama_batch_get_one(request_tokens.data(), request_tokens.size());
-
-		char buf[1024];
-		int32_t len;
-
-		printf("Request tokens: \n");
-		for (auto token : request_tokens) {
-			len = ::llama_token_to_piece(vocab, token, buf, sizeof(buf), 0, false);
-			printf("%.*s", len, buf);
-		}
-		printf("\n");
-
-		int curr_token_pos = context_tokens.size();
-		bool decode_failed = false;
-
-		batch.logits[batch.n_tokens - 1] = true;
-
-		if (llama_decode(ctx, batch) != 0) {
-			decode_failed = true;
-			Dictionary response;
-			response["id"] = req.id;
-			response["error"] = "llama_decode() failed";
-			call_deferred("emit_signal", "completion_generated", response);
-			continue;
-		}
-
-		printf("Request tokens: %d\n", (int32_t)request_tokens.size());
-		printf("Batch tokens: %d\n", batch.n_tokens);
-		printf("Current token pos: %d\n", curr_token_pos);
-
-		if (decode_failed) {
-			Dictionary response;
-			response["id"] = req.id;
-			response["error"] = "llama_decode() failed";
-			call_deferred("emit_signal", "completion_generated", response);
-			continue;
-		}
-
-		context_tokens.insert(context_tokens.end(), request_tokens.begin(), request_tokens.end());
-
-		while (true) {
-			if (exit_thread) {
-				return;
-			}
-
-			llama_token new_token_id = llama_sampler_sample(sampling_ctx, ctx, -1);
-
-			Dictionary response;
-			response["id"] = req.id;
-
-			context_tokens.push_back(new_token_id);
-
-			bool eog = llama_vocab_is_eog(vocab, new_token_id);
-			bool curr_eq_n_len = curr_token_pos >= n_len;
-
-			if (eog || curr_eq_n_len) {
-				response["done"] = true;
-				call_deferred("emit_signal", "completion_generated", response);
-				break;
-			}
-
-			len = ::llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, false);
-			if (len > 0) {
-				buf[len] = '\0';
-				response["text"] = String(buf);
-			}
-			response["done"] = false;
-			call_deferred("emit_signal", "completion_generated", response);
-
-			batch = llama_batch_get_one(&new_token_id, 1);
-
-			curr_token_pos++;
-
-			if (llama_decode(ctx, batch) != 0) {
-				decode_failed = true;
-				break;
-			}
-		}
-
-		if (decode_failed) {
-			Dictionary response;
-			response["id"] = req.id;
-			response["error"] = "llama_decode() failed";
-			call_deferred("emit_signal", "completion_generated", response);
-			continue;
-		}
-	}
 }
 
 PackedStringArray LlamaContext::_get_configuration_warnings() const {
@@ -242,17 +103,78 @@ PackedStringArray LlamaContext::_get_configuration_warnings() const {
 }
 
 int LlamaContext::request_completion(const String &prompt) {
-	request_id++;
-	int id = request_id;
+	int id = 1; // Simple id for synchronous responses
 
-	UtilityFunctions::print(vformat("%s: Requesting completion for prompt id: %d", __func__, id));
+	UtilityFunctions::print(vformat("%s: Requesting completion for prompt", __func__));
 
-	mutex->lock();
-	completion_request req = { id, prompt };
-	completion_requests.append(req);
-	mutex->unlock();
+	// Synchronous completion to avoid threading issues
+	const char* prompt_c_str = prompt.utf8().get_data();
+	uint32_t prompt_length = prompt.utf8().length();
 
-	semaphore->post();
+	const llama_vocab * vocab = llama_model_get_vocab(model->model);
+
+	std::vector<llama_token> request_tokens;
+	int32_t n_tokens_max = prompt_length + 4;
+	std::vector<llama_token> tokens(n_tokens_max);
+
+	int32_t n_tokens = llama_tokenize(vocab, prompt_c_str, prompt_length, tokens.data(), n_tokens_max, true, false);
+	request_tokens.resize(n_tokens);
+	std::copy(tokens.begin(), tokens.begin() + n_tokens, request_tokens.begin());
+
+	// Process input tokens
+	llama_batch batch = llama_batch_get_one(request_tokens.data(), request_tokens.size());
+	batch.logits[batch.n_tokens - 1] = true;
+
+	if (llama_decode(ctx, batch) != 0) {
+		Dictionary response;
+		response["id"] = id;
+		response["error"] = "decode failed";
+		emit_signal("completion_generated", response);
+		return id;
+	}
+
+	context_tokens.insert(context_tokens.end(), request_tokens.begin(), request_tokens.end());
+
+	char buf[1024];
+	int32_t curr_token_pos = context_tokens.size();
+
+	// Generate completion
+	while (true) {
+		llama_token new_token_id = llama_sampler_sample(sampling_ctx, ctx, -1);
+		context_tokens.push_back(new_token_id);
+
+		bool eog = llama_vocab_is_eog(vocab, new_token_id);
+		bool curr_eq_n_len = curr_token_pos >= n_len;
+
+		if (eog || curr_eq_n_len) {
+			Dictionary response;
+			response["id"] = id;
+			response["done"] = true;
+			emit_signal("completion_generated", response);
+			break;
+		}
+
+		int32_t len = llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, false);
+		if (len > 0) {
+			buf[len] = '\0';
+			Dictionary response;
+			response["id"] = id;
+			response["text"] = String(buf);
+			response["done"] = false;
+			emit_signal("completion_generated", response);
+		}
+
+		batch = llama_batch_get_one(&new_token_id, 1);
+		curr_token_pos++;
+
+		if (llama_decode(ctx, batch) != 0) {
+			Dictionary response;
+			response["id"] = id;
+			response["error"] = "decode failed";
+			emit_signal("completion_generated", response);
+			break;
+		}
+	}
 
 	return id;
 }
@@ -318,14 +240,6 @@ void LlamaContext::_exit_tree() {
 		return;
 	}
 
-	mutex->lock();
-	exit_thread = true;
-	mutex->unlock();
-
-	semaphore->post();
-
-	thread->wait_to_finish();
-
 	if (ctx) {
 		llama_free(ctx);
 	}
@@ -334,3 +248,5 @@ void LlamaContext::_exit_tree() {
 	}
 	llama_backend_free();
 }
+
+} // namespace godot

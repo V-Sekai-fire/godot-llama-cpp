@@ -3,19 +3,16 @@
 
 #include "llama.h"
 #include "llama_model.h"
+#include "ring_buffer.h"
 #include <godot_cpp/classes/mutex.hpp>
 #include <godot_cpp/classes/node.hpp>
 #include <godot_cpp/classes/semaphore.hpp>
 #include <godot_cpp/classes/thread.hpp>
 #include <godot_cpp/templates/vector.hpp>
+
 namespace godot {
 
-struct completion_request {
-	int id;
-	String prompt;
-};
-
-class LlamaContext : public godot::Node {
+class LlamaContext : public Node {
 	GDCLASS(LlamaContext, Node)
 
 private:
@@ -33,14 +30,8 @@ private:
   } sampling_params;
   int32_t n_len = 1024;
 	uint32_t seed = -1;
-	int request_id = 0;
-	Vector<completion_request> completion_requests;
 
-	Ref<Thread> thread;
-	Ref<Semaphore> semaphore;
-	Ref<Mutex> mutex;
-  std::vector<llama_token> context_tokens;
-  bool exit_thread = false;
+	std::vector<llama_token> context_tokens;
 
 protected:
 	static void _bind_methods();
@@ -50,7 +41,6 @@ public:
 	Ref<LlamaModel> get_model();
 
 	int request_completion(const String &prompt);
-	void __thread_loop();
 
 	uint32_t get_seed();
 	void set_seed(uint32_t seed);
@@ -72,6 +62,7 @@ public:
   virtual void _exit_tree() override;
 	LlamaContext();
 };
-} //namespace godot
+
+} // namespace godot
 
 #endif

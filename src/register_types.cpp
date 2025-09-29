@@ -8,7 +8,7 @@
 #include "llama_model_loader.h"
 #include "llama_context.h"
 
-using namespace godot;
+namespace godot {
 
 static Ref<LlamaModelLoader> llamaModelLoader;
 
@@ -46,3 +46,5 @@ extern "C"
 		return init_obj.init();
 	}
 }
+
+} // namespace godot

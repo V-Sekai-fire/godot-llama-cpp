@@ -5,7 +5,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/classes/engine.hpp>
 
-using namespace godot;
+namespace godot {
 
 void LlamaModel::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("load_model"), &LlamaModel::load_model);
@@ -53,3 +53,5 @@ LlamaModel::~LlamaModel() {
 		llama_model_free(model);
 	}
 }
+
+} // namespace godot

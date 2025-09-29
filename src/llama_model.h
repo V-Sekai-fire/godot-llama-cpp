@@ -26,6 +26,6 @@ public:
 	~LlamaModel();
 };
 
-} //namespace godot
+} // namespace godot
 
 #endif

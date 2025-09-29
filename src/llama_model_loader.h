@@ -18,6 +18,6 @@ public:
 	virtual String _get_resource_type(const String &p_path) const override;
 };
 
-} //namespace godot
+} // namespace godot
 
 #endif
