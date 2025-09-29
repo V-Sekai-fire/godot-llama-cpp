@@ -30,6 +30,9 @@ set(LLAMA_BUILD_COMMON ON CACHE BOOL "Enable common library" FORCE)
 # Disable CURL as it's not needed for the addon
 set(LLAMA_CURL OFF CACHE BOOL "Disable CURL" FORCE)
 
+# Force disable Metal completely
+set(GGML_METAL OFF CACHE BOOL "Disable Metal GPU backend" FORCE)
+
 # Default optimizations
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_EXTENSIONS OFF)

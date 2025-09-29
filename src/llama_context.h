@@ -3,13 +3,7 @@
 
 #include "llama.h"
 #include "llama_model.h"
-#include "ring_buffer.h"
-#include <godot_cpp/classes/mutex.hpp>
 #include <godot_cpp/classes/node.hpp>
-#include <godot_cpp/classes/semaphore.hpp>
-#include <godot_cpp/classes/thread.hpp>
-#include <godot_cpp/templates/vector.hpp>
-#include <godot_cpp/classes/timer.hpp>
 
 namespace godot {
 
@@ -61,6 +55,9 @@ public:
 	virtual PackedStringArray _get_configuration_warnings() const override;
 	virtual void _enter_tree() override;
   virtual void _exit_tree() override;
+	virtual void _notification(int p_notification);
+
+	void try_initialize_context();
 	LlamaContext();
 };
 

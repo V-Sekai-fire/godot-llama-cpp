@@ -1,0 +1,123 @@
+extends Node
+
+func _ready():
+    print("=== Testing Mock vs Real llama.cpp ===")
+
+    if ClassDB.class_exists("LlamaContext"):
+        print("✓ LlamaContext available")
+        var ctx = LlamaContext.new()
+        print("Context created:", ctx)
+
+        if ctx:
+            # Add to scene tree first
+            get_tree().get_root().add_child(ctx)
+
+            # Wait for initialization
+            await get_tree().process_frame
+
+            # Test with model
+            test_with_model_sync(ctx)
+        else:
+            print("✗ Failed to create context")
+            test_mock_response(ctx)
+    else:
+        print("✗ LlamaContext not available")
+        get_tree().quit(1)
+
+func test_with_model_sync(context):
+    print("\n=== Testing Real llama.cpp Inference ===")
+
+    # Check if model file exists
+    var model_path = "res://models/huihui-qwen3-0.6b-abliterated-v2-q8_0.gguf"
+    var model_file_exists = FileAccess.file_exists(model_path)
+
+    if model_file_exists:
+        print("✓ Model file found:", model_path)
+
+        # Load the model
+        print("Loading model...")
+        var llama_model = load(model_path) as LlamaModel
+
+        if llama_model:
+            print("✓ Model loaded successfully")
+
+            # Set model on context (this should trigger context initialization)
+            context.model = llama_model
+
+            # Set reasonable parameters for testing
+            context.n_len = 10    # Very short response for testing
+            context.temperature = 0.0   # Use greedy sampling for deterministic output
+
+            # Wait for model initialization
+            await get_tree().process_frame
+            await get_tree().process_frame
+
+            print("\n--- Test 2: Real llama.cpp Response (model loaded) ---")
+
+            var start_time = Time.get_ticks_msec()
+            var result = context.request_completion("Answer: 2 + 2 = ")
+            var end_time = Time.get_ticks_msec()
+
+            print("Real result:", result)
+            print("Inference time:", end_time - start_time, "ms")
+            print("\n=== Real llama.cpp Working! ===")
+
+        else:
+            print("✗ Failed to load model as LlamaModel")
+            test_mock_response(context)
+    else:
+        print("✗ Model file not found:", model_path)
+        test_mock_response(context)
+
+    get_tree().quit(0)
+
+func test_with_model(context):
+    print("\n=== Testing Real llama.cpp Inference ===")
+
+    # Check if model file exists
+    var model_path = "res://models/huihui-qwen3-0.6b-abliterated-v2-q8_0.gguf"
+    var model_file_exists = FileAccess.file_exists(model_path)
+
+    if model_file_exists:
+        print("✓ Model file found:", model_path)
+
+        # Load the model
+        print("Loading model...")
+        var llama_model = load(model_path) as LlamaModel
+
+        if llama_model:
+            print("✓ Model loaded successfully")
+
+            # Set model on context
+            context.model = llama_model
+
+            # Add to scene tree using call_deferred
+            get_tree().get_root().call_deferred("add_child", context)
+
+            # Wait for scene tree to settle
+            await get_tree().process_frame
+            await get_tree().process_frame
+            await get_tree().process_frame
+
+            print("\n--- Test 2: Real llama.cpp Response (model loaded) ---")
+
+            var start_time = Time.get_ticks_msec()
+            var result = context.request_completion("What is 2+2?")
+            var end_time = Time.get_ticks_msec()
+
+            print("Real result:", result)
+            print("Inference time:", end_time - start_time, "ms")
+            print("\n=== Real llama.cpp Working! ===")
+
+        else:
+            print("✗ Failed to load model as LlamaModel")
+            test_mock_response(context)
+    else:
+        print("✗ Model file not found:", model_path)
+        test_mock_response(context)
+
+func test_mock_response(context):
+    print("\n--- Test 1: Mock Response (no model loaded) ---")
+    var mock_result = context.request_completion("What is 2+2?")
+    print("Mock result:", mock_result)
+    print("\n=== Mock Response Working (Real Inference Not Available) ===")

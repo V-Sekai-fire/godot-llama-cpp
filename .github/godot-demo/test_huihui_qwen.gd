@@ -157,27 +157,19 @@ func setup_context() -> bool:
 
 func run_inference():
 	print("=== Running Inference ===")
-	
+
 	# Load grammar if available
 	var grammar_content = load_grammar()
-	
+
 	# Prepare test prompt
-	var test_prompt = 'Please answer this math question in the following JSON format: {"answer": "your_answer", "explanation": "brief_explanation", "confidence": 0.95}. Question: What is 2+2?'
+	var test_prompt = 'What is 2+2?'
 	var start_time = Time.get_ticks_msec()
-	
+
 	test_results["test_prompt"] = test_prompt
 	test_results["inference_start_time"] = start_time
 	test_results["status"] = "running_inference"
-	test_results["grammar_used"] = grammar_content != ""
-	
+
 	print("Prompt: ", test_prompt)
-	print("Grammar length: ", grammar_content.length())
-	
-	# Configure completion parameters on the context
-	llama_context.temperature = 0.7
-	llama_context.top_p = 0.95
-	llama_context.n_len = 10  # Very small for testing
-	# Note: grammar support would need additional implementation in the context class
 
 	# Check if request_completion method exists
 	if not llama_context.has_method("request_completion"):
@@ -186,25 +178,21 @@ func run_inference():
 
 	# Request completion synchronously
 	var response = llama_context.request_completion(test_prompt)
+	var end_time = Time.get_ticks_msec()
+
 	if response == "":
 		output_error("Failed to get completion - empty response")
 		return
 
+	# Store synchronous result
 	test_results["response"] = response
 	test_results["status"] = "completed"
-	test_results["end_time"] = Time.get_ticks_msec()
-	test_results["duration_ms"] = test_results["end_time"] - test_results["start_time"]
+	test_results["end_time"] = end_time
+	test_results["duration_ms"] = end_time - start_time
+
 	print("✓ Synchronous completion successful")
 	print("Response: ", response)
 	output_results()
-	
-	# Set up timeout
-	await get_tree().process_frame
-	var timer = get_tree().create_timer(30.0)
-	if timer:
-		timer.timeout.connect(_on_timeout)
-	else:
-		output_error("Failed to create timeout timer")
 
 func load_grammar() -> String:
 	print("=== Loading Grammar ===")

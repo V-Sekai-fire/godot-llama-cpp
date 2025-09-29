@@ -1,11 +1,10 @@
 #include "llama_context.h"
-#include <algorithm>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/os.hpp>
-#include <godot_cpp/classes/worker_thread_pool.hpp>
 #include <godot_cpp/core/class_db.hpp>
-#include <godot_cpp/variant/dictionary.hpp>
+#include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/variant/utility_functions.hpp>
+#include <godot_cpp/variant/variant.hpp>
 
 namespace godot {
 
@@ -60,21 +59,53 @@ LlamaContext::LlamaContext() {
 
 void LlamaContext::_enter_tree() {
 	// TODO: remove this and use runtime classes once godot 4.3 lands, see https://github.com/godotengine/godot/pull/82554
+	try_initialize_context();
+}
+
+void LlamaContext::_notification(int p_notification) {
+	switch (p_notification) {
+		case NOTIFICATION_READY: {
+			// In case initialization didn't happen in _enter_tree, try again
+			// This handles cases where model is set after _enter_tree
+			try_initialize_context();
+			break;
+		}
+	}
+}
+
+void LlamaContext::try_initialize_context() {
 	if (Engine::get_singleton()->is_editor_hint()) {
 		return;
 	}
 
-	if (model->model == NULL) {
-		UtilityFunctions::printerr(vformat("%s: Failed to initialize llama context, model property not defined", __func__));
+	if (model.is_null()) {
+		return; // Wait for model to be set
+	}
+
+	if (model->model == nullptr) {
+		UtilityFunctions::printerr(vformat("%s: Model is null", __func__));
 		return;
 	}
 
+	if (ctx != nullptr) {
+		UtilityFunctions::print(vformat("%s: Context already initialized", __func__));
+		return;
+	}
+
+	UtilityFunctions::print(vformat("%s: Initializing context with model (CPU-only)...", __func__));
+
+	// Force CPU backend only to avoid Metal memory crashes
 	llama_backend_init();
 	llama_numa_init(ggml_numa_strategy::GGML_NUMA_STRATEGY_DISABLED);
 
+	// Set context params for CPU-only operation
+	ctx_params.embeddings    = false;
+	ctx_params.offload_kqv   = false;
+	ctx_params.op_offload    = false;
+
 	ctx = llama_init_from_model(model->model, ctx_params);
 	if (ctx == NULL) {
-		UtilityFunctions::printerr(vformat("%s: Failed to initialize llama context, null ctx", __func__));
+		UtilityFunctions::printerr(vformat("%s: Failed to initialize llama context", __func__));
 		return;
 	}
 
@@ -83,15 +114,18 @@ void LlamaContext::_enter_tree() {
 		return false; // Continue, don't abort
 	}, nullptr);
 
-	if (sampling_params.temperature == 0.0f) {
+	// Initialize sampler based on temperature
+	if (sampling_params.temperature <= 0.1f) {
+		// Low temperature = greedy sampling for deterministic output
 		sampling_ctx = llama_sampler_init_greedy();
 	} else {
+		// High temperature = use temperature and top_p
 		sampling_ctx = llama_sampler_init_temp(sampling_params.temperature);
 		llama_sampler_chain_add(sampling_ctx, llama_sampler_init_top_p(sampling_params.top_p, 1));
 		llama_sampler_chain_add(sampling_ctx, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 	}
 
-	UtilityFunctions::print(vformat("%s: Context initialized", __func__));
+	UtilityFunctions::print(vformat("%s: Context initialized successfully", __func__));
 }
 
 PackedStringArray LlamaContext::_get_configuration_warnings() const {
@@ -105,15 +139,89 @@ PackedStringArray LlamaContext::_get_configuration_warnings() const {
 String LlamaContext::request_completion(const String &prompt) {
 	UtilityFunctions::print(vformat("%s: Processing prompt synchronously", __func__));
 
-	// Return a simple mock response for testing
-	String response = "The answer is 42. This is a simulated response from the Llama model.";
-	UtilityFunctions::print(vformat("Response generated: %s", response));
+	// Return mock response if model/context not initialized (for testing without model)
+	if (model.is_null() || !ctx) {
+		UtilityFunctions::print(vformat("%s: Using mock response (model/context not initialized)", __func__));
+		return "Mock response: Model not loaded, but synchronous completion works!";
+	}
 
-	return response;
+	// Tokenize input prompt
+	const llama_vocab * vocab = llama_model_get_vocab(model->model);
+	const char* prompt_c_str = prompt.utf8().get_data();
+	uint32_t prompt_length = prompt.utf8().length();
+
+	int32_t n_tokens_max = prompt_length + 4; // Add padding for special tokens
+	std::vector<llama_token> tokens(n_tokens_max);
+	int32_t n_tokens = llama_tokenize(vocab, prompt_c_str, prompt_length, tokens.data(), n_tokens_max, true, false);
+
+	if (n_tokens < 0) {
+		String error = "Failed to tokenize prompt";
+		UtilityFunctions::printerr(error);
+		return error;
+	}
+
+	tokens.resize(n_tokens);
+
+	// Process input tokens
+	llama_batch batch = llama_batch_get_one(tokens.data(), tokens.size());
+	batch.logits[tokens.size() - 1] = true;
+
+	if (llama_decode(ctx, batch) != 0) {
+		String error = "Failed to decode input tokens";
+		UtilityFunctions::printerr(error);
+		return error;
+	}
+
+	// Store input tokens in context
+	context_tokens.insert(context_tokens.end(), tokens.begin(), tokens.end());
+
+	// Generate response tokens
+	std::vector<llama_token> response_tokens;
+
+	char buf[1024];
+	String response_string = "";
+	int32_t curr_token_pos = context_tokens.size();
+
+	for (int i = 0; i < n_len && (int)context_tokens.size() < (int)ctx_params.n_ctx; ++i) {
+		llama_token new_token = llama_sampler_sample(sampling_ctx, ctx, context_tokens.size() - 1);
+
+		if (llama_vocab_is_eog(vocab, new_token)) {
+			break; // End of generation
+		}
+
+		if (i < 3) {
+			// Skip BOS/EOS tokens at start of response
+			continue;
+		}
+
+		response_tokens.push_back(new_token);
+		context_tokens.push_back(new_token);
+
+		int32_t len = llama_token_to_piece(vocab, new_token, buf, sizeof(buf), 0, false);
+		if (len > 0) {
+			buf[len] = '\0';
+			response_string += String(buf);
+		}
+
+		// Decode new token
+		batch = llama_batch_get_one(&new_token, 1);
+		curr_token_pos++;
+
+		if (llama_decode(ctx, batch) != 0) {
+			String error = "Failed to decode response token";
+			UtilityFunctions::printerr(error);
+			return response_string.is_empty() ? error : response_string;
+		}
+	}
+
+	UtilityFunctions::print(vformat("Response generated with %d tokens", (int)response_tokens.size()));
+	return response_string;
 }
 
 void LlamaContext::set_model(const Ref<LlamaModel> p_model) {
 	model = p_model;
+	// Try to initialize context when model is set
+	try_initialize_context();
 }
 Ref<LlamaModel> LlamaContext::get_model() {
 	return model;
