@@ -158,9 +158,6 @@ func setup_context() -> bool:
 func run_inference():
 	print("=== Running Inference ===")
 
-	# Load grammar if available
-	var grammar_content = load_grammar()
-
 	# Prepare test prompt
 	var test_prompt = 'What is 2+2?'
 	var start_time = Time.get_ticks_msec()
@@ -193,42 +190,6 @@ func run_inference():
 	print("✓ Synchronous completion successful")
 	print("Response: ", response)
 	output_results()
-
-func load_grammar() -> String:
-	print("=== Loading Grammar ===")
-	
-	var grammar_path = "res://grammars/test_response.gbnf"
-	
-	if FileAccess.file_exists(grammar_path):
-		print("✓ Grammar file exists: ", grammar_path)
-		var grammar_file = FileAccess.open(grammar_path, FileAccess.READ)
-		if grammar_file:
-			var content = grammar_file.get_as_text()
-			grammar_file.close()
-			print("✓ Loaded grammar, length: ", content.length())
-			return content
-		else:
-			print("✗ Could not open grammar file")
-	else:
-		print("✗ Grammar file not found: ", grammar_path)
-	
-	# Try JSON fallback
-	var json_grammar_path = "res://grammars/json.gbnf"
-	if FileAccess.file_exists(json_grammar_path):
-		print("Trying JSON fallback grammar...")
-		var json_file = FileAccess.open(json_grammar_path, FileAccess.READ)
-		if json_file:
-			var content = json_file.get_as_text()
-			json_file.close()
-			print("✓ Using JSON grammar as fallback, length: ", content.length())
-			return content
-		else:
-			print("✗ Could not open JSON fallback grammar")
-	else:
-		print("✗ JSON fallback grammar not found either")
-	
-	print("Will proceed without grammar")
-	return ""
 
 func _on_completion_generated(chunk: Dictionary):
 	print("Received chunk: ", chunk)
