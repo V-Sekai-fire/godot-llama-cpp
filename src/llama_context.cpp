@@ -137,7 +137,7 @@ PackedStringArray LlamaContext::_get_configuration_warnings() const {
 }
 
 String LlamaContext::request_completion(const String &prompt) {
-  printf("DEBUG: request_completion called\n");
+  	printf("DEBUG: request_completion called\n");
 	UtilityFunctions::print("LlamaContext::request_completion: Processing prompt synchronously");
 
 	// Return mock response if model/context not initialized (for testing without model)
@@ -163,6 +163,10 @@ String LlamaContext::request_completion(const String &prompt) {
 	// Tokenize input prompt
 	UtilityFunctions::print(vformat("%s: Getting vocab from model", __func__));
 	const llama_vocab * vocab = llama_model_get_vocab(model->model);
+	if (!vocab) {
+		UtilityFunctions::print("Vocab is null");
+		return "Mock response: Vocab not loaded";
+	}
 	UtilityFunctions::print(vformat("%s: Converting prompt to UTF-8", __func__));
 	const char* prompt_c_str = prompt.utf8().get_data();
 	uint32_t prompt_length = prompt.utf8().length();
@@ -170,7 +174,14 @@ String LlamaContext::request_completion(const String &prompt) {
 
 	int32_t n_tokens_max = prompt_length + 4; // Add padding for special tokens
 	std::vector<llama_token> tokens(n_tokens_max);
-	int32_t n_tokens = llama_tokenize(vocab, prompt_c_str, prompt_length, tokens.data(), n_tokens_max, true, false);
+	printf("DEBUG: before tokenize, prompt_length=%u, n_tokens_max=%d\n", prompt_length, n_tokens_max);
+	int32_t n_tokens = llama_tokenize(vocab, prompt_c_str, prompt_length, tokens.data(), n_tokens_max, false, false);
+	printf("DEBUG: after tokenize, n_tokens=%d\n", n_tokens);
+	if (n_tokens < 0) {
+		UtilityFunctions::print(vformat("Tokenization failed: %d", n_tokens));
+		return "Tokenization failed";
+	}
+	UtilityFunctions::print(vformat("Tokenized to %d tokens", n_tokens));
 
 	if (n_tokens < 0) {
 		String error = "Failed to tokenize prompt";
