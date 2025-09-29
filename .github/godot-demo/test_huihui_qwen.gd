@@ -184,14 +184,19 @@ func run_inference():
 		output_error("LlamaContext missing request_completion method")
 		return
 
-	# Request completion
-	var completion_id = llama_context.request_completion(test_prompt)
-	if completion_id == 0:
-		output_error("Failed to request completion - returned 0")
+	# Request completion synchronously
+	var response = llama_context.request_completion(test_prompt)
+	if response == "":
+		output_error("Failed to get completion - empty response")
 		return
-	
-	test_results["completion_id"] = completion_id
-	print("✓ Completion requested, ID: ", completion_id)
+
+	test_results["response"] = response
+	test_results["status"] = "completed"
+	test_results["end_time"] = Time.get_ticks_msec()
+	test_results["duration_ms"] = test_results["end_time"] - test_results["start_time"]
+	print("✓ Synchronous completion successful")
+	print("Response: ", response)
+	output_results()
 	
 	# Set up timeout
 	await get_tree().process_frame

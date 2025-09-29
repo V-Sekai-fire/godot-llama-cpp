@@ -9,6 +9,7 @@
 #include <godot_cpp/classes/semaphore.hpp>
 #include <godot_cpp/classes/thread.hpp>
 #include <godot_cpp/templates/vector.hpp>
+#include <godot_cpp/classes/timer.hpp>
 
 namespace godot {
 
@@ -40,7 +41,7 @@ public:
 	void set_model(const Ref<LlamaModel> model);
 	Ref<LlamaModel> get_model();
 
-	int request_completion(const String &prompt);
+	String request_completion(const String &prompt);
 
 	uint32_t get_seed();
 	void set_seed(uint32_t seed);
